@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StoryBrooke</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Arial, sans-serif; background: #f7f4ef; color: #2a2a2a; }
+    .top { display: flex; gap: 10px; align-items: center; background: #3f2a18; color: #fff; padding: 14px 18px; }
+    .brand { font-size: 24px; font-weight: 700; }
+    .top input { flex: 1; max-width: 420px; padding: 8px; border-radius: 6px; border: none; }
+    button { cursor: pointer; border: none; border-radius: 6px; padding: 8px 12px; font-weight: 600; }
+    .btn-main { background: #f4e7d0; color: #3f2a18; }
+    .layout { display: grid; grid-template-columns: 280px 1fr; gap: 16px; max-width: 1120px; margin: 16px auto; padding: 0 16px; }
+    .card { background: #fff; border: 1px solid #ddd3c8; border-radius: 10px; padding: 14px; margin-bottom: 12px; }
+    .title { font-size: 18px; font-weight: 700; color: #3f2a18; margin-bottom: 10px; }
+    label { display: block; font-size: 12px; margin-top: 8px; color: #555; }
+    input, textarea { width: 100%; padding: 8px; border: 1px solid #d8cec2; border-radius: 6px; margin-top: 4px; }
+    textarea { min-height: 64px; resize: vertical; }
+    .muted { color: #707070; font-size: 13px; }
+    .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+    .stat { background: #f6f0e7; border-radius: 8px; padding: 8px; text-align: center; }
+    .stat .num { font-size: 20px; font-weight: 700; color: #3f2a18; }
+    .book-row { border-bottom: 1px solid #eee4d7; padding: 10px 0; display: flex; justify-content: space-between; gap: 12px; }
+    .book-row:last-child { border-bottom: none; }
+    .book-row a { color: #02645e; text-decoration: none; font-weight: 700; }
+    .book-row .meta { font-size: 12px; color: #666; }
+    .msg { margin-top: 8px; font-size: 12px; min-height: 18px; }
+    .error { color: #a11212; }
+    .ok { color: #1a7d33; }
+    .flex { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .pill { background: #efe6d8; color: #3f2a18; padding: 2px 8px; border-radius: 20px; font-size: 12px; }
+    .review { border-top: 1px solid #efe7dc; padding-top: 8px; margin-top: 8px; }
+    .star { color: #cf9d2f; }
+  </style>
+</head>
+<body>
+  <div class="top">
+    <div class="brand">StoryBrooke</div>
+    <input id="searchInput" placeholder="Search by title, author, or ISBN" />
+    <button class="btn-main" onclick="searchBooks()">Search</button>
+  </div>
+
+  <div class="layout">
+    <aside>
+      <div class="card">
+        <div class="title">Load profile</div>
+        <label>Username</label>
+        <input id="loadUsername" placeholder="jane_reader" />
+        <button class="btn-main" style="margin-top:10px;width:100%;" onclick="loadDashboard()">Load dashboard</button>
+        <div id="loadMsg" class="msg"></div>
+      </div>
+
+      <div class="card">
+        <div class="title">Create profile</div>
+        <label>Username</label>
+        <input id="newUsername" />
+        <label>Name</label>
+        <input id="newName" />
+        <label>Date joined</label>
+        <input id="newDate" type="date" />
+        <button class="btn-main" style="margin-top:10px;width:100%;" onclick="createProfile()">Create profile</button>
+        <div id="profileMsg" class="msg"></div>
+      </div>
+
+      <div class="card">
+        <div class="title">Add book</div>
+        <label>ISBN</label>
+        <input id="bookIsbn" />
+        <label>Title</label>
+        <input id="bookTitle" />
+        <label>Author</label>
+        <input id="bookAuthor" />
+        <label>Summary</label>
+        <textarea id="bookSummary"></textarea>
+        <button class="btn-main" style="margin-top:10px;width:100%;" onclick="addBook()">Save book</button>
+        <div id="bookMsg" class="msg"></div>
+      </div>
+    </aside>
+
+    <main>
+      <div class="card">
+        <div class="title">Personalized dashboard</div>
+        <div id="profileHeader" class="muted">Load a profile to view reading log and favorites.</div>
+        <div class="stat-grid">
+          <div class="stat"><div class="num" id="booksRead">0</div><div class="muted">Books Read</div></div>
+          <div class="stat"><div class="num" id="favoritesCount">0</div><div class="muted">Favorites</div></div>
+        </div>
+        <div class="stat-grid">
+          <div class="stat"><div class="num" id="reviewsCount">0</div><div class="muted">Reviews</div></div>
+          <div class="stat"><div class="num" id="searchCount">0</div><div class="muted">Search Results</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="title">Reading log</div>
+        <div id="readingLog"></div>
+      </div>
+
+      <div class="card">
+        <div class="title">Favorites</div>
+        <div id="favoritesList"></div>
+      </div>
+
+      <div class="card">
+        <div class="title">Search results</div>
+        <div id="searchResults" class="muted">Use the search bar to find books.</div>
+      </div>
+
+      <div class="card">
+        <div class="title">Book details</div>
+        <div id="bookDetails" class="muted">Click any search result or reading log entry.</div>
+      </div>
+
+      <div class="card">
+        <div class="title">Add to reading log</div>
+        <div class="flex">
+          <input id="logUsername" placeholder="username" style="max-width:160px;" />
+          <input id="logIsbn" placeholder="isbn" style="max-width:180px;" />
+          <input id="logDate" type="date" style="max-width:170px;" />
+          <label class="flex" style="font-size:13px;margin-top:0;">
+            <input id="logFavorite" type="checkbox" style="width:auto;margin-top:0;" /> Favorite
+          </label>
+          <button class="btn-main" onclick="addReadingLog()">Save</button>
+        </div>
+        <div id="logMsg" class="msg"></div>
+      </div>
+
+      <div class="card">
+        <div class="title">Write review</div>
+        <div class="flex">
+          <input id="reviewUsername" placeholder="username" style="max-width:180px;" />
+          <input id="reviewIsbn" placeholder="isbn" style="max-width:180px;" />
+          <input id="reviewStars" type="number" min="1" max="5" placeholder="stars 1-5" style="max-width:120px;" />
+        </div>
+        <label>Review text</label>
+        <textarea id="reviewText"></textarea>
+        <button class="btn-main" style="margin-top:10px;" onclick="addReview()">Post review</button>
+        <div id="reviewMsg" class="msg"></div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const API = "http://localhost:3000/api";
+    let currentUsername = "";
+
+    function stars(value) {
+      const n = Math.round(Number(value || 0));
+      return `${"★".repeat(n)}${"☆".repeat(5 - n)}`;
+    }
+
+    function setMessage(id, text, isError) {
+      const el = document.getElementById(id);
+      el.textContent = text;
+      el.className = `msg ${isError ? "error" : "ok"}`;
+    }
+
+    async function request(url, options) {
+      const res = await fetch(url, options);
+      const body = await res.json();
+      if (!res.ok) {
+        throw new Error(body.error || "Request failed");
+      }
+      return body;
+    }
+
+    async function createProfile() {
+      try {
+        await request(`${API}/profiles`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            username: document.getElementById("newUsername").value.trim(),
+            name: document.getElementById("newName").value.trim(),
+            dateJoined: document.getElementById("newDate").value || null
+          })
+        });
+        setMessage("profileMsg", "Profile created.", false);
+      } catch (error) {
+        setMessage("profileMsg", error.message, true);
+      }
+    }
+
+    async function addBook() {
+      try {
+        await request(`${API}/books`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            isbn: document.getElementById("bookIsbn").value.trim(),
+            title: document.getElementById("bookTitle").value.trim(),
+            author: document.getElementById("bookAuthor").value.trim(),
+            summary: document.getElementById("bookSummary").value.trim()
+          })
+        });
+        setMessage("bookMsg", "Book saved.", false);
+      } catch (error) {
+        setMessage("bookMsg", error.message, true);
+      }
+    }
+
+    async function loadDashboard() {
+      const username = document.getElementById("loadUsername").value.trim();
+      if (!username) {
+        setMessage("loadMsg", "Username is required.", true);
+        return;
+      }
+
+      try {
+        const data = await request(`${API}/profiles/${encodeURIComponent(username)}/dashboard`);
+        currentUsername = username;
+        document.getElementById("profileHeader").textContent = `${data.profile.name} (@${data.profile.username}) joined on ${new Date(data.profile.date_joined).toLocaleDateString()}`;
+        document.getElementById("booksRead").textContent = data.stats.booksRead;
+        document.getElementById("favoritesCount").textContent = data.stats.favoriteCount;
+        document.getElementById("reviewsCount").textContent = data.stats.reviewCount;
+        document.getElementById("logUsername").value = username;
+        document.getElementById("reviewUsername").value = username;
+        renderReadingLog(data.readingLog);
+        renderFavorites(data.favorites);
+        setMessage("loadMsg", "Dashboard loaded.", false);
+      } catch (error) {
+        setMessage("loadMsg", error.message, true);
+      }
+    }
+
+    function renderReadingLog(entries) {
+      const root = document.getElementById("readingLog");
+      if (!entries.length) {
+        root.innerHTML = '<div class="muted">No reading log entries yet.</div>';
+        return;
+      }
+      root.innerHTML = entries.map((entry) => `
+        <div class="book-row">
+          <div>
+            <a href="#" onclick="event.preventDefault(); loadBook('${entry.isbn}');">${entry.title}</a>
+            <div class="meta">${entry.author} | ISBN ${entry.isbn} | Finished ${entry.date_finished ? new Date(entry.date_finished).toLocaleDateString() : "N/A"}</div>
+            <div class="meta">Avg Rating: ${Number(entry.average_rating || 0).toFixed(2)} <span class="star">${stars(entry.average_rating)}</span></div>
+          </div>
+          <div>
+            <span class="pill">${entry.is_favorite ? "Favorite" : "Not favorite"}</span>
+            <button class="btn-main" style="margin-left:8px;" onclick="toggleFavorite(${entry.entry_id}, ${entry.is_favorite ? "false" : "true"})">${entry.is_favorite ? "Unfavorite" : "Favorite"}</button>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    function renderFavorites(favorites) {
+      const root = document.getElementById("favoritesList");
+      if (!favorites.length) {
+        root.innerHTML = '<div class="muted">No favorites selected yet.</div>';
+        return;
+      }
+      root.innerHTML = favorites.map((book) => `
+        <div class="book-row">
+          <div>
+            <a href="#" onclick="event.preventDefault(); loadBook('${book.isbn}');">${book.title}</a>
+            <div class="meta">${book.author} | ISBN ${book.isbn}</div>
+          </div>
+          <div class="meta">Avg ${Number(book.average_rating || 0).toFixed(2)}</div>
+        </div>
+      `).join("");
+    }
+
+    async function searchBooks() {
+      const q = document.getElementById("searchInput").value.trim();
+      try {
+        const books = await request(`${API}/books/search?q=${encodeURIComponent(q)}`);
+        document.getElementById("searchCount").textContent = books.length;
+        const root = document.getElementById("searchResults");
+        if (!books.length) {
+          root.innerHTML = "No books found.";
+          return;
+        }
+        root.innerHTML = books.map((book) => `
+          <div class="book-row">
+            <div>
+              <a href="#" onclick="event.preventDefault(); loadBook('${book.isbn}');">${book.title}</a>
+              <div class="meta">${book.author} | ISBN ${book.isbn}</div>
+            </div>
+            <div class="meta">${Number(book.average_rating || 0).toFixed(2)} <span class="star">${stars(book.average_rating)}</span></div>
+          </div>
+        `).join("");
+      } catch (error) {
+        document.getElementById("searchResults").textContent = error.message;
+      }
+    }
+
+    async function loadBook(isbn) {
+      try {
+        const book = await request(`${API}/books/${encodeURIComponent(isbn)}`);
+        document.getElementById("logIsbn").value = isbn;
+        document.getElementById("reviewIsbn").value = isbn;
+        document.getElementById("bookDetails").innerHTML = `
+          <div class="book-row" style="border:none;padding-top:0;">
+            <div>
+              <div class="title" style="margin-bottom:4px;">${book.title}</div>
+              <div class="meta">ISBN: ${book.isbn}</div>
+              <div class="meta">Author: ${book.author}</div>
+              <div class="meta">Average Rating: ${Number(book.average_rating || 0).toFixed(2)} <span class="star">${stars(book.average_rating)}</span></div>
+              <p style="margin-top:10px;">${book.summary || "No summary available."}</p>
+            </div>
+          </div>
+          <div class="title" style="font-size:16px;margin-top:6px;">Reviews</div>
+          ${book.reviews.length ? book.reviews.map((review) => `
+            <div class="review">
+              <div class="meta">@${review.username} | ${new Date(review.time_posted).toLocaleString()}</div>
+              <div class="star">${stars(review.star_rating)} (${review.star_rating})</div>
+              <div>${review.review_text || ""}</div>
+            </div>
+          `).join("") : '<div class="muted">No reviews yet.</div>'}
+        `;
+      } catch (error) {
+        document.getElementById("bookDetails").textContent = error.message;
+      }
+    }
+
+    async function addReadingLog() {
+      try {
+        await request(`${API}/reading-log`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            username: document.getElementById("logUsername").value.trim(),
+            isbn: document.getElementById("logIsbn").value.trim(),
+            dateFinished: document.getElementById("logDate").value || null,
+            isFavorite: document.getElementById("logFavorite").checked
+          })
+        });
+        setMessage("logMsg", "Reading log entry saved.", false);
+        if (currentUsername) {
+          loadDashboard();
+        }
+      } catch (error) {
+        setMessage("logMsg", error.message, true);
+      }
+    }
+
+    async function addReview() {
+      try {
+        await request(`${API}/reviews`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            username: document.getElementById("reviewUsername").value.trim(),
+            isbn: document.getElementById("reviewIsbn").value.trim(),
+            starRating: Number(document.getElementById("reviewStars").value),
+            reviewText: document.getElementById("reviewText").value.trim()
+          })
+        });
+        setMessage("reviewMsg", "Review posted.", false);
+        if (document.getElementById("reviewIsbn").value.trim()) {
+          loadBook(document.getElementById("reviewIsbn").value.trim());
+        }
+        if (currentUsername) {
+          loadDashboard();
+        }
+      } catch (error) {
+        setMessage("reviewMsg", error.message, true);
+      }
+    }
+
+    async function toggleFavorite(entryId, nextValue) {
+      if (!currentUsername) {
+        return;
+      }
+      try {
+        await request(`${API}/reading-log/${encodeURIComponent(currentUsername)}/${entryId}/favorite`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ isFavorite: nextValue === "true" })
+        });
+        await loadDashboard();
+      } catch (error) {
+        setMessage("loadMsg", error.message, true);
+      }
+    }
+  </script>
+</body>
+</html>
