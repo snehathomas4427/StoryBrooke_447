@@ -23,12 +23,15 @@ def execute_sql_script(connection, script_path):
         print(f"Failed to execute scipt {script_path}:{e}")
 
 def main():
+    connection = None
     try:
         connection = mysql.connector.connect(
             host = "mysql-493f1ce-snehavechoor-9509.b.aivencloud.com",
             user = "avnadmin",
             password = "AVNS_kOsb_af8qwPk7TDILBe",
             port = 21996,
+            database="defaultdb",
+            ssl_disabled=False
         )
         if connection.is_connected():
             print("Connected to MySql server!")
@@ -43,7 +46,7 @@ def main():
         print(f"Error: {e}")
         
     finally:
-        if connection.is_connected():
+        if connection and connection.is_connected():
             connection.close()
         print("Closed connection to MySQL server.")
         
