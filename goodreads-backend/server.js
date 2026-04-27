@@ -1,26 +1,105 @@
 const express = require("express");
 const cors = require("cors");
 const mysql = require("mysql2/promise");
+const session = require("express-session");
 
 const app = express();
 const PORT = 3000;
 
-app.use(cors());
-app.use(express.json());
+const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "http://localhost:5173";
+const ALLOWED_ORIGINS = new Set([
+  FRONTEND_ORIGIN,
+  "http://localhost:5173",
+  "http://127.0.0.1:5173"
+]);
 
-const pool = mysql.createPool({
-  host: process.env.DB_HOST || "mysql-493f1ce-snehavechoor-9509.b.aivencloud.com",
-  user: process.env.DB_USER || "avnadmin",
-  password: process.env.DB_PASSWORD || "AVNS_kOsb_af8qwPk7TDILBe",
-  database: process.env.DB_NAME || "defaultdb",
-  port: Number(process.env.DB_PORT || 21996),
-  ssl: {
-    rejectUnauthorized: false
-  },
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0
-});
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin) return callback(null, true);
+      if (ALLOWED_ORIGINS.has(origin)) return callback(null, true);
+      return callback(null, true);
+    },
+    credentials: true
+  })
+);
+app.use(express.json());
+app.use(
+  session({
+    name: "storybrooke.sid",
+    secret: process.env.SESSION_SECRET || "storybrooke-dev-secret",
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: false,
+      maxAge: 1000 * 60 * 60 * 24 * 30
+    }
+  })
+);
+
+let pool;
+let dbMode = "unknown";
+
+function createRealPool() {
+  return mysql.createPool({
+    host: process.env.DB_HOST || "mysql-493f1ce-snehavechoor-9509.b.aivencloud.com",
+    user: process.env.DB_USER || "avnadmin",
+    password: process.env.DB_PASSWORD || "AVNS_kOsb_af8qwPk7TDILBe",
+    database: process.env.DB_NAME || "defaultdb",
+    port: Number(process.env.DB_PORT || 21996),
+    ssl: {
+      rejectUnauthorized: false
+    },
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0,
+    connectTimeout: 5000
+  });
+}
+
+function createStubPool() {
+  // Falls back to the in-memory store used by the smoke tests so the dev
+  // server stays usable when the cloud DB is unreachable (e.g. offline).
+  const stub = require("./test/stubMysql.js");
+  stub.__store.reset();
+  stub.__store.seed();
+  return stub.createPool();
+}
+
+async function setupPool() {
+  if (process.env.DB_MODE === "memory") {
+    console.warn("[storybrooke] DB_MODE=memory: using in-memory database.");
+    pool = createStubPool();
+    dbMode = "memory";
+    return;
+  }
+
+  const realPool = createRealPool();
+  try {
+    await Promise.race([
+      realPool.query("SELECT 1"),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("DB ping timed out")), 8000)
+      )
+    ]);
+    pool = realPool;
+    dbMode = "aiven";
+    console.log("[storybrooke] Connected to Aiven MySQL.");
+  } catch (err) {
+    console.warn(
+      `[storybrooke] Could not reach cloud DB (${err.message}). Falling back to in-memory database.`
+    );
+    try {
+      await realPool.end();
+    } catch {
+      /* ignore */
+    }
+    pool = createStubPool();
+    dbMode = "memory";
+  }
+}
 
 async function initDb() {
   await pool.query(`
@@ -68,6 +147,26 @@ async function initDb() {
   `);
 }
 
+function todayIsoDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+// Returns { value: string|null } on success, or { error: string } if invalid.
+// `value` will be null when the caller wants to clear the date.
+function parseFinishedDate(raw) {
+  if (raw === null || raw === undefined || raw === "") {
+    return { value: null };
+  }
+  const asString = String(raw).slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(asString)) {
+    return { error: "dateFinished must be a YYYY-MM-DD date or null" };
+  }
+  if (asString > todayIsoDate()) {
+    return { error: "Date finished cannot be in the future." };
+  }
+  return { value: asString };
+}
+
 async function refreshBookAverageRating(isbn) {
   const [rows] = await pool.query(
     `SELECT COALESCE(AVG(star_rating), 0) AS avg_rating FROM review WHERE isbn = ?`,
@@ -80,9 +179,9 @@ async function refreshBookAverageRating(isbn) {
 app.get("/health", async (_req, res) => {
   try {
     await pool.query("SELECT 1");
-    res.json({ ok: true });
+    res.json({ ok: true, dbMode });
   } catch (error) {
-    res.status(500).json({ ok: false, error: error.message });
+    res.status(500).json({ ok: false, dbMode, error: error.message });
   }
 });
 
@@ -262,11 +361,74 @@ app.post("/api/reviews", async (req, res) => {
   }
 });
 
+app.delete("/api/reviews/:reviewId", async (req, res) => {
+  try {
+    const reviewIdNum = Number(req.params.reviewId);
+    if (!Number.isFinite(reviewIdNum)) {
+      return res.status(400).json({ error: "Invalid review id" });
+    }
+
+    const sessionUsername = req.session?.user?.username;
+    if (!sessionUsername) {
+      return res.status(401).json({ error: "Please sign in to delete reviews." });
+    }
+
+    const [rows] = await pool.query(
+      `SELECT username, isbn FROM review WHERE review_id = ?`,
+      [reviewIdNum]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ error: "Review not found" });
+    }
+
+    const review = rows[0];
+    if (review.username !== sessionUsername) {
+      return res
+        .status(403)
+        .json({ error: "You can only delete your own reviews." });
+    }
+
+    await pool.query(`DELETE FROM review WHERE review_id = ?`, [reviewIdNum]);
+    await refreshBookAverageRating(review.isbn);
+    res.json({ message: "Review deleted", reviewId: reviewIdNum });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.post("/api/reading-log", async (req, res) => {
   try {
     const { username, isbn, dateFinished, isFavorite } = req.body;
     if (!username || !isbn) {
       return res.status(400).json({ error: "username and isbn are required" });
+    }
+
+    const parsed = parseFinishedDate(dateFinished);
+    if (parsed.error) {
+      return res.status(400).json({ error: parsed.error });
+    }
+
+    const [existingEntries] = await pool.query(
+      `SELECT entry_id, is_favorite FROM reading_log_entry WHERE username = ? AND isbn = ? LIMIT 1`,
+      [username, isbn]
+    );
+    if (existingEntries.length > 0) {
+      const existing = existingEntries[0];
+      if (isFavorite && !existing.is_favorite) {
+        await pool.query(
+          `UPDATE reading_log_entry SET is_favorite = TRUE WHERE username = ? AND entry_id = ?`,
+          [username, existing.entry_id]
+        );
+        return res.status(200).json({
+          message: "Book is already in your reading log; marked as favorite.",
+          entryId: existing.entry_id,
+          alreadyInLog: true
+        });
+      }
+      const message = isFavorite
+        ? "this book is already in your favorites"
+        : "this book is already in your reading log";
+      return res.status(409).json({ error: message, entryId: existing.entry_id });
     }
 
     const [maxEntryIdRows] = await pool.query(
@@ -280,10 +442,40 @@ app.post("/api/reading-log", async (req, res) => {
       INSERT INTO reading_log_entry (username, entry_id, isbn, date_finished, is_favorite)
       VALUES (?, ?, ?, ?, ?)
       `,
-      [username, nextEntryId, isbn, dateFinished || null, Boolean(isFavorite)]
+      [username, nextEntryId, isbn, parsed.value, Boolean(isFavorite)]
     );
 
     res.status(201).json({ message: "Reading log entry created", entryId: nextEntryId });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.patch("/api/reading-log/:username/:entryId", async (req, res) => {
+  try {
+    const { username, entryId } = req.params;
+    const entryIdNum = Number(entryId);
+    if (!Number.isFinite(entryIdNum)) {
+      return res.status(400).json({ error: "Invalid entry id" });
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(req.body || {}, "dateFinished")) {
+      return res.status(400).json({ error: "dateFinished is required" });
+    }
+
+    const parsed = parseFinishedDate(req.body.dateFinished);
+    if (parsed.error) {
+      return res.status(400).json({ error: parsed.error });
+    }
+
+    const [result] = await pool.query(
+      `UPDATE reading_log_entry SET date_finished = ? WHERE username = ? AND entry_id = ?`,
+      [parsed.value, username, entryIdNum]
+    );
+    if (!result || result.affectedRows === 0) {
+      return res.status(404).json({ error: "Reading log entry not found" });
+    }
+    res.json({ message: "Reading log entry updated", dateFinished: parsed.value });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -293,9 +485,30 @@ app.patch("/api/reading-log/:username/:entryId/favorite", async (req, res) => {
   try {
     const { username, entryId } = req.params;
     const { isFavorite } = req.body;
+    const entryIdNum = Number(entryId);
+
+    if (isFavorite) {
+      const [entryRows] = await pool.query(
+        `SELECT isbn FROM reading_log_entry WHERE username = ? AND entry_id = ?`,
+        [username, entryIdNum]
+      );
+      if (entryRows.length > 0) {
+        const isbn = entryRows[0].isbn;
+        const [existingFavorites] = await pool.query(
+          `SELECT entry_id FROM reading_log_entry WHERE username = ? AND isbn = ? AND is_favorite = TRUE AND entry_id <> ? LIMIT 1`,
+          [username, isbn, entryIdNum]
+        );
+        if (existingFavorites.length > 0) {
+          return res
+            .status(409)
+            .json({ error: "this book is already in your favorites" });
+        }
+      }
+    }
+
     await pool.query(
       `UPDATE reading_log_entry SET is_favorite = ? WHERE username = ? AND entry_id = ?`,
-      [Boolean(isFavorite), username, Number(entryId)]
+      [Boolean(isFavorite), username, entryIdNum]
     );
     res.json({ message: "Favorite updated" });
   } catch (error) {
@@ -303,7 +516,69 @@ app.patch("/api/reading-log/:username/:entryId/favorite", async (req, res) => {
   }
 });
 
-initDb()
+app.post("/api/auth/login", async (req, res) => {
+  try {
+    const usernameRaw = req.body?.username;
+    const nameRaw = req.body?.name;
+    const username = typeof usernameRaw === "string" ? usernameRaw.trim() : "";
+    if (!username) {
+      return res.status(400).json({ error: "username is required" });
+    }
+    if (username.length > 50) {
+      return res.status(400).json({ error: "username must be 50 characters or fewer" });
+    }
+
+    const [existing] = await pool.query(
+      `SELECT username, name, date_joined FROM user_profile WHERE username = ?`,
+      [username]
+    );
+
+    let profile;
+    if (existing.length > 0) {
+      profile = existing[0];
+    } else {
+      const fallbackName =
+        typeof nameRaw === "string" && nameRaw.trim() ? nameRaw.trim() : username;
+      const today = new Date().toISOString().slice(0, 10);
+      await pool.query(
+        `INSERT INTO user_profile (username, name, date_joined) VALUES (?, ?, ?)`,
+        [username, fallbackName, today]
+      );
+      profile = { username, name: fallbackName, date_joined: today };
+    }
+
+    req.session.user = {
+      username: profile.username,
+      name: profile.name,
+      dateJoined: profile.date_joined
+    };
+
+    res.json({ user: req.session.user });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get("/api/auth/me", (req, res) => {
+  if (req.session?.user) {
+    return res.json({ user: req.session.user });
+  }
+  res.json({ user: null });
+});
+
+app.post("/api/auth/logout", (req, res) => {
+  if (!req.session) return res.json({ ok: true });
+  req.session.destroy((err) => {
+    if (err) {
+      return res.status(500).json({ error: err.message });
+    }
+    res.clearCookie("storybrooke.sid");
+    res.json({ ok: true });
+  });
+});
+
+setupPool()
+  .then(() => initDb())
   .then(() => {
     app.listen(PORT, () => {
       console.log(`Server running on http://localhost:${PORT}`);
