@@ -60,9 +60,9 @@ function createRealPool() {
 }
 
 function createStubPool() {
-  // Falls back to the in-memory store used by the smoke tests so the dev
-  // server stays usable when the cloud DB is unreachable (e.g. offline).
-  const stub = require("./test/stubMysql.js");
+  // Falls back to an in-memory store so the dev server stays usable when
+  // the cloud DB is unreachable (e.g. offline).
+  const stub = require("./stubMysql.js");
   stub.__store.reset();
   stub.__store.seed();
   return stub.createPool();

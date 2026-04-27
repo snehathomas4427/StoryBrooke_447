@@ -1,5 +1,5 @@
-// In-memory stub for mysql2/promise used by the smoke tests.
-// It must be installed in require.cache BEFORE server.js is loaded.
+// In-memory stub for mysql2/promise used as the offline development
+// fallback when the cloud MySQL database (Aiven) is unreachable.
 
 const profiles = new Map();
 const books = new Map();
@@ -18,7 +18,6 @@ function reset() {
 }
 
 function seed() {
-  // Books used by the smoke tests.
   books.set("isbn-1", {
     isbn: "isbn-1",
     title: "The Hobbit",
