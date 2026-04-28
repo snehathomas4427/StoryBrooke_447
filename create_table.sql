@@ -1,3 +1,8 @@
+-- starting schema for storybrooke
+-- the live aiven db is actually built by server js initDb so this file is more of a reference
+-- when i first wrote this i had isbn as an int but switched to varchar in the real schema
+-- since real isbns can have dashes and leading zeros
+
 CREATE TABLE IF NOT EXISTS book(
     Title VARCHAR(255),
     ISBN INT PRIMARY KEY,

@@ -1,3 +1,5 @@
+// thin wrappers around the auth endpoints on the backend
+
 import { apiClient } from "./client.js";
 
 export async function login({ username, name }) {

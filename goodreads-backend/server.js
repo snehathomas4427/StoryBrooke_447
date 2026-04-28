@@ -1,3 +1,7 @@
+// main backend server for storybrooke
+// handles auth books reviews and reading log stuff
+// talks to aiven mysql or falls back to in memory if cloud is down
+
 const express = require("express");
 const cors = require("cors");
 const mysql = require("mysql2/promise");
@@ -6,6 +10,7 @@ const session = require("express-session");
 const app = express();
 const PORT = 3000;
 
+// vite dev server runs on 5173 so we let that origin in
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "http://localhost:5173";
 const ALLOWED_ORIGINS = new Set([
   FRONTEND_ORIGIN,
@@ -24,6 +29,8 @@ app.use(
   })
 );
 app.use(express.json());
+
+// session cookie keeps the user logged in for 30 days
 app.use(
   session({
     name: "storybrooke.sid",
@@ -39,6 +46,7 @@ app.use(
   })
 );
 
+// pool gets set later once we figure out which db to use
 let pool;
 let dbMode = "unknown";
 
@@ -60,14 +68,14 @@ function createRealPool() {
 }
 
 function createStubPool() {
-  // Falls back to an in-memory store so the dev server stays usable when
-  // the cloud DB is unreachable (e.g. offline).
+  // backup db that lives in memory so dev still works if aiven is offline
   const stub = require("./stubMysql.js");
   stub.__store.reset();
   stub.__store.seed();
   return stub.createPool();
 }
 
+// tries aiven first then falls back to the in memory stub
 async function setupPool() {
   if (process.env.DB_MODE === "memory") {
     console.warn("[storybrooke] DB_MODE=memory: using in-memory database.");
@@ -78,6 +86,8 @@ async function setupPool() {
 
   const realPool = createRealPool();
   try {
+    // ping aiven with a quick select so we know its alive
+    // race against an 8 second timeout so we dont hang forever
     await Promise.race([
       realPool.query("SELECT 1"),
       new Promise((_, reject) =>
@@ -101,6 +111,8 @@ async function setupPool() {
   }
 }
 
+// makes sure all the tables exist when the server starts up
+// uses if not exists so it wont overwrite anything thats already there
 async function initDb() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS user_profile (
@@ -147,12 +159,14 @@ async function initDb() {
   `);
 }
 
+// helper to grab todays date in yyyy mm dd format
 function todayIsoDate() {
   return new Date().toISOString().slice(0, 10);
 }
 
-// Returns { value: string|null } on success, or { error: string } if invalid.
-// `value` will be null when the caller wants to clear the date.
+// validates a date string from the client
+// returns value null when the user wants to clear the date
+// returns an error if its not yyyy mm dd or its in the future
 function parseFinishedDate(raw) {
   if (raw === null || raw === undefined || raw === "") {
     return { value: null };
@@ -167,6 +181,8 @@ function parseFinishedDate(raw) {
   return { value: asString };
 }
 
+// recomputes the avg rating for a book whenever a review is added or deleted
+// keeps the books average_rating column in sync with the actual reviews
 async function refreshBookAverageRating(isbn) {
   const [rows] = await pool.query(
     `SELECT COALESCE(AVG(star_rating), 0) AS avg_rating FROM review WHERE isbn = ?`,
@@ -176,6 +192,7 @@ async function refreshBookAverageRating(isbn) {
   await pool.query(`UPDATE book SET average_rating = ? WHERE isbn = ?`, [avg, isbn]);
 }
 
+// quick endpoint to check if the server and db are alive
 app.get("/health", async (_req, res) => {
   try {
     await pool.query("SELECT 1");
@@ -185,6 +202,8 @@ app.get("/health", async (_req, res) => {
   }
 });
 
+// create a new user profile manually
+// the auth login endpoint also creates one if you sign in with a new username
 app.post("/api/profiles", async (req, res) => {
   try {
     const { username, name, dateJoined } = req.body;
@@ -203,6 +222,8 @@ app.post("/api/profiles", async (req, res) => {
   }
 });
 
+// returns everything the dashboard page needs in one request
+// profile info plus reading log plus favorites plus review count
 app.get("/api/profiles/:username/dashboard", async (req, res) => {
   try {
     const { username } = req.params;
@@ -257,6 +278,7 @@ app.get("/api/profiles/:username/dashboard", async (req, res) => {
   }
 });
 
+// adds a brand new book to the catalog
 app.post("/api/books", async (req, res) => {
   try {
     const { isbn, title, author, summary } = req.body;
@@ -274,9 +296,14 @@ app.post("/api/books", async (req, res) => {
   }
 });
 
+// search bar endpoint
+// if no query is given it just returns the first batch of books sorted by title
+// if a query is given it does a like match on isbn title and author
+// then orders so exact isbn matches come first then prefix title matches
 app.get("/api/books/search", async (req, res) => {
   try {
     const q = (req.query.q || "").trim();
+    // cap the limit at 50 so people cant ask for thousands of rows
     const limit = Math.min(Number(req.query.limit || 20), 50);
 
     if (!q) {
@@ -310,6 +337,7 @@ app.get("/api/books/search", async (req, res) => {
   }
 });
 
+// loads a single book plus all of its reviews for the detail page
 app.get("/api/books/:isbn", async (req, res) => {
   try {
     const { isbn } = req.params;
@@ -337,6 +365,9 @@ app.get("/api/books/:isbn", async (req, res) => {
   }
 });
 
+// post a new review for a book
+// star rating has to be between 1 and 5
+// also recalcs the books average rating after inserting
 app.post("/api/reviews", async (req, res) => {
   try {
     const { username, isbn, starRating, reviewText } = req.body;
@@ -361,6 +392,8 @@ app.post("/api/reviews", async (req, res) => {
   }
 });
 
+// only lets you delete your own review
+// checks that the session user matches the username on the review
 app.delete("/api/reviews/:reviewId", async (req, res) => {
   try {
     const reviewIdNum = Number(req.params.reviewId);
@@ -396,6 +429,9 @@ app.delete("/api/reviews/:reviewId", async (req, res) => {
   }
 });
 
+// add a book to the users reading log
+// if the book is already in their log we dont add a duplicate row
+// if they want to favorite it but its already there we just flip the favorite flag
 app.post("/api/reading-log", async (req, res) => {
   try {
     const { username, isbn, dateFinished, isFavorite } = req.body;
@@ -408,6 +444,7 @@ app.post("/api/reading-log", async (req, res) => {
       return res.status(400).json({ error: parsed.error });
     }
 
+    // check if this book is already in the users log so we dont double add
     const [existingEntries] = await pool.query(
       `SELECT entry_id, is_favorite FROM reading_log_entry WHERE username = ? AND isbn = ? LIMIT 1`,
       [username, isbn]
@@ -431,6 +468,7 @@ app.post("/api/reading-log", async (req, res) => {
       return res.status(409).json({ error: message, entryId: existing.entry_id });
     }
 
+    // entry_id is per user so we grab their current max and add one
     const [maxEntryIdRows] = await pool.query(
       `SELECT COALESCE(MAX(entry_id), 0) AS max_entry_id FROM reading_log_entry WHERE username = ?`,
       [username]
@@ -451,6 +489,8 @@ app.post("/api/reading-log", async (req, res) => {
   }
 });
 
+// updates the date_finished field for an existing reading log entry
+// passing null clears the date
 app.patch("/api/reading-log/:username/:entryId", async (req, res) => {
   try {
     const { username, entryId } = req.params;
@@ -481,6 +521,8 @@ app.patch("/api/reading-log/:username/:entryId", async (req, res) => {
   }
 });
 
+// toggles whether a reading log entry is a favorite
+// makes sure the same book isnt favorited twice for the same user
 app.patch("/api/reading-log/:username/:entryId/favorite", async (req, res) => {
   try {
     const { username, entryId } = req.params;
@@ -488,6 +530,7 @@ app.patch("/api/reading-log/:username/:entryId/favorite", async (req, res) => {
     const entryIdNum = Number(entryId);
 
     if (isFavorite) {
+      // grab the isbn so we can check if another entry for this same book is already favorited
       const [entryRows] = await pool.query(
         `SELECT isbn FROM reading_log_entry WHERE username = ? AND entry_id = ?`,
         [username, entryIdNum]
@@ -516,6 +559,9 @@ app.patch("/api/reading-log/:username/:entryId/favorite", async (req, res) => {
   }
 });
 
+// signs a user in
+// if the username doesnt exist yet we auto create the profile
+// stores the user info in the session so the browser stays logged in
 app.post("/api/auth/login", async (req, res) => {
   try {
     const usernameRaw = req.body?.username;
@@ -559,6 +605,7 @@ app.post("/api/auth/login", async (req, res) => {
   }
 });
 
+// frontend calls this on page load to figure out who is signed in
 app.get("/api/auth/me", (req, res) => {
   if (req.session?.user) {
     return res.json({ user: req.session.user });
@@ -566,6 +613,7 @@ app.get("/api/auth/me", (req, res) => {
   res.json({ user: null });
 });
 
+// destroys the session and clears the cookie
 app.post("/api/auth/logout", (req, res) => {
   if (!req.session) return res.json({ ok: true });
   req.session.destroy((err) => {
@@ -577,6 +625,8 @@ app.post("/api/auth/logout", (req, res) => {
   });
 });
 
+// startup sequence
+// 1 connect to the db 2 make sure tables exist 3 actually start listening
 setupPool()
   .then(() => initDb())
   .then(() => {

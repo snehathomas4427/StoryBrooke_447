@@ -1,5 +1,10 @@
+// star rating widgets
+// display version is read only and shows half stars
+// input version lets the user click to pick a 1 to 5 rating
+
 import { useState } from "react";
 
+// one star svg can be filled empty or half filled using a gradient trick
 function Star({ filled, half = false, className = "" }) {
   return (
     <svg
@@ -38,6 +43,8 @@ export function StarRatingDisplay({ value = 0, size = "md" }) {
   );
 }
 
+// clickable star input
+// hovered overrides value so the user gets a preview before committing
 export function StarRatingInput({ value, onChange, disabled = false }) {
   const [hovered, setHovered] = useState(0);
   const display = hovered || value || 0;

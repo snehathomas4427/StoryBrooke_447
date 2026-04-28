@@ -1,6 +1,10 @@
+// little card used on the search page to show a single book
+// clicking it takes you to the detail page
+
 import { Link } from "react-router-dom";
 import { StarRatingDisplay } from "./StarRating.jsx";
 
+// some books have multiple authors so split on commas semicolons slashes ampersands or the word and
 function splitAuthors(author) {
   if (!author) return [];
   return String(author)
@@ -9,6 +13,7 @@ function splitAuthors(author) {
     .filter(Boolean);
 }
 
+// keep the summary short on the card so the layout doesnt blow up
 function truncate(text, max = 180) {
   if (!text) return "";
   const clean = String(text).trim();

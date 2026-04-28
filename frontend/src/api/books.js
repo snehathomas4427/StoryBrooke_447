@@ -1,3 +1,5 @@
+// frontend wrappers for the book related endpoints
+
 import { apiClient } from "./client.js";
 
 export async function searchBooks(query, limit = 20) {

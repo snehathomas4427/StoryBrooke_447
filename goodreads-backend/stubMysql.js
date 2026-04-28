@@ -1,5 +1,6 @@
-// In-memory stub for mysql2/promise used as the offline development
-// fallback when the cloud MySQL database (Aiven) is unreachable.
+// fake in memory db that mimics mysql2 promise
+// only kicks in when aiven is unreachable so we can still demo the app offline
+// stores everything in plain js maps and arrays
 
 const profiles = new Map();
 const books = new Map();
@@ -10,6 +11,7 @@ function noop() {
   return [{}, []];
 }
 
+// wipes all the in memory data
 function reset() {
   profiles.clear();
   books.clear();
@@ -17,6 +19,8 @@ function reset() {
   readingLog.length = 0;
 }
 
+// fills the in memory db with the same sample data we use on aiven
+// so the app looks the same in both modes
 function seed() {
   books.set("isbn-1", {
     isbn: "isbn-1",
@@ -162,6 +166,9 @@ function seed() {
   }
 }
 
+// pattern matches on the start of the sql string to figure out what real query is being asked
+// then emulates it on the in memory data
+// not a full sql parser just enough cases to cover the routes in server js
 async function query(sql, params = []) {
   const text = String(sql).trim();
   const lower = text.toLowerCase();

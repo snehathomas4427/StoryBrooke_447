@@ -1,14 +1,14 @@
--- Seed data for the StoryBrooke Aiven MySQL database.
--- Schema matches the tables created by goodreads-backend/server.js initDb():
---   user_profile(username, name, date_joined)
---   book(isbn, title, author, average_rating, summary)
---   review(review_id, username, isbn, star_rating, review_text, time_posted)
---   reading_log_entry(username, entry_id, isbn, date_finished, is_favorite)
+-- seed data for the storybrooke aiven mysql database
+-- has to match the tables that server js initDb makes
+--   user_profile username name date_joined
+--   book isbn title author average_rating summary
+--   review review_id username isbn star_rating review_text time_posted
+--   reading_log_entry username entry_id isbn date_finished is_favorite
 --
--- Safe to re-run: INSERT IGNORE skips rows that conflict with existing PKs.
+-- using insert ignore so i can run this multiple times without it blowing up on duplicate keys
 
 -- =========================
--- USERS (insert first so reviews / reading_log_entry FKs resolve)
+-- users go first so the foreign keys on reviews and reading log can find them
 -- =========================
 INSERT IGNORE INTO user_profile (username, name, date_joined) VALUES
   ('bookLover',  'Andrew Garfield',  '2025-01-10'),
@@ -33,8 +33,9 @@ INSERT IGNORE INTO user_profile (username, name, date_joined) VALUES
   ('loganW',     'Logan White',      '2024-10-08');
 
 -- =========================
--- BOOKS
--- isbn is VARCHAR(20) in the live schema, so it must be quoted.
+-- books
+-- isbn is varchar 20 in the real schema so we quote it as a string
+-- got bit by this earlier when isbns came in as ints and rows went into wrong columns
 -- =========================
 INSERT IGNORE INTO book (isbn, title, author, average_rating, summary) VALUES
   ('4512', 'Harry Potter',                          'JK Rowling',          5, 'boy with magic'),
@@ -59,10 +60,9 @@ INSERT IGNORE INTO book (isbn, title, author, average_rating, summary) VALUES
   ('1020', 'The Fault in Our Stars',                'John Green',          4, 'teen romance with illness');
 
 -- =========================
--- REVIEWS
--- The live `review` table requires a username (FK -> user_profile.username).
--- review_id is AUTO_INCREMENT in the schema; we set explicit IDs here so the
--- seed is deterministic. INSERT IGNORE makes re-runs safe.
+-- reviews
+-- review needs a username because of the fk to user_profile
+-- review_id is auto increment but we set explicit ids here so the seed is reproducible
 -- =========================
 INSERT IGNORE INTO review (review_id, username, isbn, star_rating, review_text, time_posted) VALUES
   ( 1, 'bookLover', '1001', 5, 'Amazing classic!',         '2025-01-12 10:30:00'),
@@ -87,10 +87,10 @@ INSERT IGNORE INTO review (review_id, username, isbn, star_rating, review_text, 
   (20, 'loganW',    '1002', 5, 'Scarily relevant',         '2025-03-30 13:25:00');
 
 -- =========================
--- READING LOG
--- Live table is `reading_log_entry` with PK (username, entry_id) and an
--- is_favorite flag. The original 'sneha01' row is mapped to 'bookLover'
--- because sneha01 doesn't exist in user_profile (FK would reject it).
+-- reading log
+-- table is reading_log_entry pk is username plus entry_id and there is an is_favorite flag
+-- the old sneha01 row got remapped to bookLover because sneha01 was never in user_profile
+-- and the fk would reject it
 -- =========================
 INSERT IGNORE INTO reading_log_entry (username, entry_id, isbn, date_finished, is_favorite) VALUES
   ('bookLover', 1, '1001', '2025-01-10', FALSE),
@@ -115,7 +115,8 @@ INSERT IGNORE INTO reading_log_entry (username, entry_id, isbn, date_finished, i
   ('loganW',    1, '1002', '2025-01-29', FALSE);
 
 -- =========================
--- Sync average_rating on book to match the seeded reviews.
+-- after seeding reviews recompute each books average rating
+-- so the books table actually matches the reviews we just inserted
 -- =========================
 UPDATE book b
 SET average_rating = (

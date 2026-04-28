@@ -1,3 +1,5 @@
+// review api wrappers
+
 import { apiClient } from "./client.js";
 
 export async function submitReview({ username, isbn, starRating, reviewText }) {

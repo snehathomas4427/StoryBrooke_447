@@ -1,3 +1,6 @@
+// reading log api wrappers
+// add a new entry toggle favorite update finished date
+
 import { apiClient } from "./client.js";
 
 export async function addReadingLogEntry({ username, isbn, dateFinished, isFavorite }) {

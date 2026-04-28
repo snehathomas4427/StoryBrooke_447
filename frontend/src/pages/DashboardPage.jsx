@@ -1,3 +1,7 @@
+// users personal dashboard
+// shows their stats reading log favorites and a want to read section
+// also where you can sort and filter your log and edit finished dates
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { fetchDashboard } from "../api/dashboard.js";
@@ -8,6 +12,7 @@ import { StarRatingDisplay } from "../components/StarRating.jsx";
 import { EmptyState } from "../components/EmptyState.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 
+// little helper to make the date readable
 function formatDate(value) {
   if (!value) return "—";
   try {
@@ -23,6 +28,8 @@ function formatDate(value) {
   }
 }
 
+// sorts the reading log entries on the client based on which dropdown option is picked
+// keeping it client side feels snappier than asking the server to resort every time
 function sortReadingLog(entries, sortKey) {
   const copy = [...entries];
   switch (sortKey) {
@@ -88,6 +95,8 @@ export function DashboardPage() {
     load();
   }, [load]);
 
+  // applies the favorite and min rating filters then sorts
+  // memoized so we dont redo all the work on every keystroke
   const readingLogProcessed = useMemo(() => {
     const list = dashboard?.readingLog || [];
     const filtered = list.filter((entry) => {
@@ -98,12 +107,15 @@ export function DashboardPage() {
     return sortReadingLog(filtered, sortKey);
   }, [dashboard?.readingLog, sortKey, filterFavorites, minRating]);
 
+  // toggles whether an entry is a favorite
+  // also does an optimistic update so the heart fills in right away
   async function handleFavoriteToggle(entry) {
     if (!user?.username || !entry) return;
     const nextValue = !entry.is_favorite;
     setFavBusy(entry.entry_id);
     setFavNotice("");
 
+    // dont let the same book be favorited twice for the same user
     if (nextValue) {
       const alreadyFavorited = (dashboard?.readingLog || []).some(
         (row) =>
@@ -174,6 +186,8 @@ export function DashboardPage() {
     return d.toISOString().slice(0, 10);
   }, []);
 
+  // saves whatever the user typed into the date input for an entry
+  // empty string gets sent as null to clear the date on the backend
   async function handleSaveFinishedDate(entry) {
     if (!user?.username) return;
     const key = dateKey(entry);

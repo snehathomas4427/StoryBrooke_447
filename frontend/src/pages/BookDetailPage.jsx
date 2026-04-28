@@ -1,3 +1,7 @@
+// book detail page
+// shows the books info plus all reviews
+// also where the user can post a review delete their own review or add to reading log
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { fetchBookDetail } from "../api/books.js";
@@ -10,9 +14,11 @@ import { ReviewCard } from "../components/ReviewCard.jsx";
 import { EmptyState } from "../components/EmptyState.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 
+// hard limits on what we accept in the review form so the textarea doesnt go crazy
 const REVIEW_MAX_LENGTH = 15000;
 const SUMMARY_MAX_LENGTH = 1000;
 
+// same author splitting trick as in book card
 function splitAuthors(author) {
   if (!author) return [];
   return String(author)
@@ -79,6 +85,8 @@ export function BookDetailPage() {
   const authors = useMemo(() => splitAuthors(book?.author), [book?.author]);
   const summary = useMemo(() => clampSummary(book?.summary), [book?.summary]);
 
+  // submit a new review for this book
+  // does some client side validation first then calls the api
   async function onReviewSubmit(event) {
     event.preventDefault();
     setReviewError("");
@@ -106,6 +114,8 @@ export function BookDetailPage() {
         reviewText: reviewText.trim() || null
       });
 
+      // optimistic update so the new review pops in instantly
+      // we still call load below to grab the real review id from the server
       const optimistic = {
         review_id: `optimistic-${Date.now()}`,
         username: user.username,
@@ -155,6 +165,8 @@ export function BookDetailPage() {
     }
   }
 
+  // adds the current book to the users reading log
+  // the date_finished is left null on purpose they can fill it in from the dashboard later
   async function handleAddToLog({ isFavorite }) {
     if (!isAuthenticated || !user?.username) {
       setLogError("Please sign in to update your reading list.");

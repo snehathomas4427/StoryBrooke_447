@@ -1,3 +1,6 @@
+// home page where you search for books or just browse the catalog
+// the search query lives in the url so you can share or refresh and keep results
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { searchBooks } from "../api/books.js";
@@ -10,11 +13,14 @@ export function SearchPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const queryParam = searchParams.get("q") || "";
 
+  // input value is the current text in the box
+  // queryParam is the actual search that has been committed to the url
   const [inputValue, setInputValue] = useState(queryParam);
   const [books, setBooks] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  // hits the backend search endpoint and stores the results
   const load = useCallback(async (q) => {
     setLoading(true);
     setError("");
@@ -29,11 +35,13 @@ export function SearchPage() {
     }
   }, []);
 
+  // refetch any time the url query changes
   useEffect(() => {
     setInputValue(queryParam);
     load(queryParam);
   }, [queryParam, load]);
 
+  // pushes the new query into the url which triggers the effect above
   function onSubmit(event) {
     event.preventDefault();
     const next = inputValue.trim();

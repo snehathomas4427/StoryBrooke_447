@@ -1,3 +1,7 @@
+// main app shell
+// login gate blocks the rest of the app until the user signs in
+// then we show the navbar plus the routed pages plus a little footer
+
 import { Navigate, Route, Routes } from "react-router-dom";
 import { Navbar } from "./components/Navbar.jsx";
 import { LoginGate } from "./components/LoginGate.jsx";
@@ -15,6 +19,7 @@ export default function App() {
             <Route path="/" element={<SearchPage />} />
             <Route path="/books/:isbn" element={<BookDetailPage />} />
             <Route path="/dashboard" element={<DashboardPage />} />
+            {/* anything we dont recognize goes back to the search page */}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>

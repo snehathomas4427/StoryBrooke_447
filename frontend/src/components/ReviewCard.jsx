@@ -1,5 +1,9 @@
+// shows one review on the book detail page
+// has a delete button if the logged in user wrote the review
+
 import { StarRatingDisplay } from "./StarRating.jsx";
 
+// turn the raw db datetime into something nice like jan 12 2025
 function formatTimestamp(value) {
   if (!value) return "";
   try {

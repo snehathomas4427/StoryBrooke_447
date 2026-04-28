@@ -1,3 +1,6 @@
+// blocks the rest of the app until the user is signed in
+// shows a loading state first then either the children or the login form
+
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext.jsx";
 
@@ -18,6 +21,8 @@ export function LoginGate({ children }) {
 
   if (isAuthenticated) return children;
 
+  // hits the login endpoint
+  // if the username is new the backend just creates a new profile on the fly
   async function onSubmit(event) {
     event.preventDefault();
     setErrorMessage("");

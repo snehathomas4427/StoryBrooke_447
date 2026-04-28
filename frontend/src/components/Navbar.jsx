@@ -1,7 +1,11 @@
+// top navbar that sits on every page
+// has the logo a search box and the browse and dashboard links plus sign out
+
 import { useEffect, useState } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 
+// the storybrooke wordmark with the little book icon
 function LogoMark() {
   return (
     <span className="flex items-center gap-2">
@@ -35,10 +39,13 @@ export function Navbar() {
   const { user, isAuthenticated, logout } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
 
+  // clear the search box if we navigate away from the search page
+  // so it doesnt look like the old query is still active
   useEffect(() => {
     if (location.pathname !== "/") setSearchTerm("");
   }, [location.pathname]);
 
+  // submitting from anywhere in the app sends you to the search page with the query in the url
   function onSubmit(event) {
     event.preventDefault();
     const q = searchTerm.trim();

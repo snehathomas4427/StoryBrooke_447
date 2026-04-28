@@ -1,3 +1,5 @@
+// reusable empty state card
+// shows up when a list has nothing in it like no reviews or no favorites yet
 export function EmptyState({ title, description, action = null }) {
   return (
     <div className="card flex flex-col items-center gap-2 border-dashed text-center">
